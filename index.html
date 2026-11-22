@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Electrical Inventory - Material Inventory Application</title>
+  <meta name="description" content="A premium inventory dashboard for office and staff quarters maintenance material tracking. Fully integrated with Google Sheets.">
+  <link rel="stylesheet" href="styles.css">
+  <!-- Lucide Icons for premium visual icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- PDF-Lib for merging multiple item PO/Invoice PDFs into single dossier -->
+  <script src="https://unpkg.com/pdf-lib@1.17.9/dist/pdf-lib.min.js"></script>
+</head>
+<body>
+
+  <div class="app-container">
+    <!-- Main Content Area (Full-width, Top Navigation) -->
+    <main class="main-content">
+      <!-- Always-Visible Top Main Header & Navigation Headings -->
+      <div class="home-hero-header">
+        <div class="home-hero-top-row">
+          <div class="home-hero-title-row">
+            <div class="home-hero-icon"><i data-lucide="zap"></i></div>
+            <h1 class="home-hero-title">Electrical Inventory Out Campus</h1>
+          </div>
+          <div class="header-actions">
+            <!-- System & Account Dropdown (Administrator at top-right in small area) -->
+            <div class="system-dropdown-wrapper" id="system-dropdown-wrapper">
+              <button type="button" class="system-dropdown-btn" id="system-dropdown-btn" aria-haspopup="true" aria-expanded="false" title="System Menu & Options">
+                <span class="dropdown-user-icon"><i data-lucide="user"></i></span>
+                <span id="top-dropdown-user-label">Administrator</span>
+                <i data-lucide="chevron-down" class="dropdown-chevron"></i>
+              </button>
+              <div class="system-dropdown-menu" id="system-dropdown-menu">
+                <!-- User Role Status -->
+                <div class="dropdown-section">
+                  <span class="dropdown-section-title">User Role</span>
+                  <div class="mode-badge local" id="role-badge" style="font-weight: bold; background: rgba(99, 102, 241, 0.15); color: #818cf8; border-color: rgba(99, 102, 241, 0.3); width: 100%; justify-content: flex-start; padding: 7px 12px; border-radius: 8px;">
+                    <span class="badge-dot"></span>
+                    <span id="role-text">Administrator</span>
+                  </div>
+                </div>
+
+                <!-- Database Connection Status -->
+                <div class="dropdown-section">
+                  <span class="dropdown-section-title">Database Status</span>
+                  <div class="mode-badge local" id="db-status-badge" style="width: 100%; justify-content: flex-start; padding: 7px 12px; border-radius: 8px;">
+                    <span class="badge-dot"></span>
+                    <span id="db-status-text">Demo Mode (Local)</span>
+                  </div>
+                </div>
+
+                <div class="dropdown-divider"></div>
+
+                <!-- Action Items -->
+                <button type="button" class="dropdown-menu-item" id="manual-sync-btn">
+                  <i data-lucide="refresh-cw"></i>
+                  <span>Sync Data</span>
+                </button>
+
+                <button type="button" class="dropdown-menu-item menu-item" data-tab="settings" id="top-settings-btn">
+                  <i data-lucide="settings"></i>
+                  <span>Settings</span>
+                </button>
+
+                <div class="dropdown-divider"></div>
+
+                <button type="button" class="dropdown-menu-item logout" id="logout-btn">
+                  <i data-lucide="log-out"></i>
+                  <span>Log Out</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <nav class="home-nav-headings" aria-label="Main Navigation Headings">
+          <button type="button" class="home-nav-btn active" data-tab="dashboard">
+            <i data-lucide="layout-dashboard"></i>
+            <span>Dashboard</span>
+          </button>
+          <button type="button" class="home-nav-btn" data-tab="inventory">
+            <i data-lucide="box"></i>
+            <span>Stock Inventory</span>
+          </button>
+          <button type="button" class="home-nav-btn" data-tab="purchases">
+            <i data-lucide="shopping-cart"></i>
+            <span>Purchase Entry</span>
+          </button>
+          <button type="button" class="home-nav-btn" data-tab="usages">
+            <i data-lucide="activity"></i>
+            <span>Usage Entry</span>
+          </button>
+          <button type="button" class="home-nav-btn" data-tab="completed-stock" id="nav-btn-completed-stock">
+            <i data-lucide="archive-restore"></i>
+            <span>Completed Stock</span>
+            <span class="badge" id="completed-stock-badge" style="display:none; margin-left: 6px; background: rgba(239, 68, 68, 0.25); color: #fca5a5; font-size: 0.72rem; padding: 1px 7px; border-radius: 10px; font-weight: 700;">0</span>
+          </button>
+        </nav>
+      </div>
+
+      <!-- TAB 1: DASHBOARD (HOME PAGE) -->
+      <div class="tab-panel active" id="dashboard-tab">
+
+        <!-- Real-Time Quick Material Search Option -->
+        <div class="glass-card" style="margin-bottom: 22px; padding: 18px 24px; background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.65)); border: 1px solid rgba(99, 102, 241, 0.35); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+            <label for="dashboard-material-search-input" style="font-size: 0.98rem; font-weight: 700; color: #a5b4fc; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <i data-lucide="search" style="width: 18px; height: 18px; color: #818cf8;"></i>
+              Quick Material Search &amp; Availability Check
+            </label>
+            <span class="kpi-subtext" style="font-size: 0.78rem;">Instantly check available quantity, health status, originating indents &amp; where used without searching all indents</span>
+          </div>
+          <div style="position: relative; display: flex; align-items: center;">
+            <i data-lucide="search" style="position: absolute; left: 14px; width: 18px; height: 18px; color: var(--text-muted); pointer-events: none;"></i>
+            <input type="text" id="dashboard-material-search-input" class="form-input" placeholder="Type material name (e.g. Flood Light, Batten, Street Light, Copper Wire, MCB, Socket)..." style="padding-left: 42px; padding-right: 38px; height: 44px; font-size: 0.94rem; border-color: rgba(99, 102, 241, 0.4); background: rgba(15, 23, 42, 0.75);">
+            <button type="button" id="dashboard-material-search-clear" style="position: absolute; right: 12px; background: none; border: none; color: var(--text-muted); cursor: pointer; display: none; padding: 4px;" title="Clear Search">
+              <i data-lucide="x" style="width: 16px; height: 16px;"></i>
+            </button>
+          </div>
+          <!-- Live Matched Materials Results Dropdown/Box -->
+          <div id="dashboard-material-search-results" style="display: none; margin-top: 14px;">
+            <!-- Populated dynamically by app.js -->
+          </div>
+        </div>
+
+        <!-- Main Unified Section: Indent No & Materials list -->
+        <div class="glass-card" style="padding: 22px 24px; border: 1px solid rgba(16, 185, 129, 0.3); background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(5, 46, 22, 0.3));">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; margin-bottom: 18px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 14px;">
+            <div>
+              <h2 class="glass-card-title" style="margin-bottom: 4px; font-size: 1.25rem; display: flex; align-items: center; gap: 10px; border-bottom: none; padding-bottom: 0; color: #34d399;">
+                <i data-lucide="file-spreadsheet" style="color: var(--success); width: 24px; height: 24px;"></i>
+                Indent No &amp; Materials list
+              </h2>
+              <p class="kpi-subtext" style="margin: 0; font-size: 0.85rem; line-height: 1.5;">
+                All purchase indents are listed below. Select any indent to view all materials purchased under it — quantities, current available stock, rates, amounts, and documents.
+              </p>
+            </div>
+            <div style="min-width: 260px; max-width: 380px; flex: 1;">
+              <select class="form-select" id="dashboard-indent-lookup-select" style="border-color: rgba(16, 185, 129, 0.5); font-weight: 600; background: rgba(15, 23, 42, 0.85);">
+                <option value="" disabled selected>Select an Indent No. to view materials...</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Quick Indent Selector Pills (Horizontal Bar for Fast 1-Click Indent Switching) -->
+          <div id="dashboard-indent-pills-bar" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
+            <!-- Populated dynamically by app.js -->
+          </div>
+
+          <!-- Full-Width Materials in Selected Indent (Moved to Left Edge, Uses 100% Screen Width) -->
+          <div id="dashboard-indent-lookup-result" style="width: 100%;">
+            <!-- Populated dynamically by app.js: materials under the selected indent -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- TAB 2: INVENTORY STATUS -->
+      <div class="tab-panel" id="inventory-tab">
+        <!-- Smart Search and Filters -->
+        <div class="table-filter-header">
+          <div class="search-wrapper">
+            <i data-lucide="search"></i>
+            <input type="text" class="form-input search-input" id="inventory-search" placeholder="Type smart search, e.g., 'low stock', 'switches', 'qty < 50'">
+          </div>
+          <div class="filter-group">
+            <select class="filter-select" id="inventory-status-filter">
+              <option value="all">All Stock Statuses</option>
+              <option value="in-stock">Healthy Stock</option>
+              <option value="low-stock">Low Stock</option>
+              <option value="out-of-stock">Out of Stock</option>
+            </select>
+            <select class="filter-select" id="inventory-category-filter">
+              <option value="all">All Categories</option>
+              <option value="wires">Wires & Cables</option>
+              <option value="mcbs">MCBs & DBs</option>
+              <option value="switches">Switches & Sockets</option>
+              <option value="others">Others</option>
+            </select>
+            <select class="filter-select" id="inventory-page-size" title="Rows per page">
+              <option value="25">25 rows</option>
+              <option value="50">50 rows</option>
+              <option value="100">100 rows</option>
+              <option value="all">Show All</option>
+            </select>
+            <button type="button" class="btn btn-secondary" id="btn-open-completed-folder-shortcut" style="padding: 6px 12px; font-size: 0.8rem; border-color: rgba(239, 68, 68, 0.4); color: #fca5a5; background: rgba(239, 68, 68, 0.1); border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; width: auto; min-width: unset;" title="Open Completed Stock Folder">
+              <i data-lucide="folder-archive" style="width: 14px; height: 14px;"></i> Completed Folder
+            </button>
+          </div>
+        </div>
+        <p class="kpi-subtext" style="margin-top: -20px; margin-left: 10px;">
+          <span class="search-tip">💡 Smart Search tip: Try filters like <code>low stock</code>, <code>GEM</code>, <code>Tender</code>, <code>cable</code>, <code>qty &lt; 20</code>, or <code>meters</code>.</span>
+        </p>
+
+        <!-- Main Stock Table -->
+        <div class="table-card">
+          <div class="table-responsive">
+            <table class="data-table" id="inventory-table">
+              <thead>
+                <tr>
+                  <th>Material Name</th>
+                  <th>Make / Brand</th>
+                  <th>Status</th>
+                  <th>Purchased</th>
+                  <th>Used</th>
+                  <th style="font-weight: 800; color: #ffffff; letter-spacing: 0.8px;">Available Qty</th>
+                  <th>Unit</th>
+                  <th style="text-align: center; width: 52px;">⚙</th>
+                </tr>
+              </thead>
+              <tbody id="inventory-table-body">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination-controls">
+            <span class="pagination-info" id="inventory-pagination-info">Showing 0-0 of 0 items</span>
+            <div class="pagination-buttons">
+              <button class="pagination-btn" id="inventory-prev-btn" disabled><i data-lucide="chevron-left"></i></button>
+              <button class="pagination-btn" id="inventory-next-btn" disabled><i data-lucide="chevron-right"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: PURCHASE ENTRY -->
+      <div class="tab-panel" id="purchases-tab">
+        <!-- Sub-tab toggle between New Purchase and Previous Stock Entry -->
+        <div style="display:flex; gap:10px; margin-bottom:18px;">
+          <button class="btn btn-primary" id="purchase-subtab-new" style="width:auto; padding:9px 22px; font-size:0.9rem;">
+            <i data-lucide="plus-circle" style="width:15px;height:15px;"></i> New Purchase Entry
+          </button>
+          <button class="btn btn-secondary" id="purchase-subtab-prev" style="width:auto; padding:9px 22px; font-size:0.9rem;">
+            <i data-lucide="archive" style="width:15px;height:15px;"></i> Previous Stock Entry
+          </button>
+        </div>
+
+        <!-- New Purchase Form -->
+        <div id="purchase-new-section">
+          <!-- Form -->
+          <div class="glass-card" style="margin-bottom: 24px;">
+            <h2 class="glass-card-title">
+              <i data-lucide="plus-circle"></i>
+              Record Material Purchase
+            </h2>
+            <form id="purchase-form">
+              <!-- Indent Header Details -->
+              <div class="form-row">
+                <div class="form-group" style="flex: 1.5; min-width: 180px;">
+                  <label class="form-label" for="purchase-indent">Indent No.</label>
+                  <input type="text" class="form-input" id="purchase-indent" required placeholder="e.g. 67/Elect/ESD/2026">
+                </div>
+                <div class="form-group" style="flex: 1.2; min-width: 160px;">
+                  <label class="form-label" for="purchase-date">Received Date (Click calendar)</label>
+                  <input type="date" class="form-input" id="purchase-date" required>
+                </div>
+                <div class="form-group" style="flex: 1.2; min-width: 160px;">
+                  <label class="form-label" for="purchase-source">Purchase Source</label>
+                  <select class="form-select" id="purchase-source" required>
+                    <option value="GEM">GEM Portal</option>
+                    <option value="Local Market">Local Market</option>
+                    <option value="Tender Work">Tender Work</option>
+                  </select>
+                </div>
+                <div class="form-group" style="flex: 2; min-width: 240px;">
+                  <label class="form-label" for="purchase-indent-po-link">Common Drive PO / Invoice Link (Optional)</label>
+                  <input type="url" class="form-input" id="purchase-indent-po-link" placeholder="Paste Google Drive link for all items in Indent">
+                </div>
+              </div>
+
+              <!-- Dynamic Material Items Section -->
+              <div style="margin-top: 10px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+                <h3 class="form-label" style="font-size: 0.95rem; font-weight: 600; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                  <span>Material Items &amp; Separate PO / Invoices in this Indent</span>
+                  <span class="kpi-subtext" style="text-transform: none;">Add multiple materials — each item can have its own separate PO or Invoice</span>
+                </h3>
+                <div id="purchase-items-list" style="display: flex; flex-direction: column; gap: 16px;"></div>
+                <button type="button" class="btn btn-secondary" id="add-item-row-btn" style="margin-top: 12px; padding: 8px 16px; font-size: 0.85rem; width: fit-content; align-self: flex-start;">
+                  <i data-lucide="plus" style="width: 14px; height: 14px; margin-right: 4px;"></i> Add Material Item
+                </button>
+              </div>
+
+              <!-- Grand Total & Submit -->
+              <div style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 20px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <span class="kpi-subtext" style="display: block;">Grand Total</span>
+                  <span style="font-size: 1.5rem; font-weight: 700; color: var(--success);" id="purchase-grand-total">₹0.00</span>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: auto; padding: 12px 30px;">
+                  <i data-lucide="save"></i>
+                  Save Purchase Record
+                </button>
+              </div>
+              <datalist id="material-suggestions"></datalist>
+              <datalist id="make-suggestions">
+                <option value="Havells">
+                <option value="Polycab">
+                <option value="Finolex">
+                <option value="Schneider Electric">
+                <option value="Legrand">
+                <option value="Anchor by Panasonic">
+                <option value="L&T Electrical">
+                <option value="Siemens">
+                <option value="Philips">
+                <option value="Syska">
+                <option value="KEI Wires">
+                <option value="Orient Electric">
+                <option value="Crompton">
+              </datalist>
+            </form>
+          </div>
+
+          <!-- History Table -->
+          <div class="table-card" style="width: 100%;">
+            <div class="chart-header" style="padding: 20px 24px; border-bottom: 1px solid var(--border-color);">
+              <span class="chart-title">Purchase History</span>
+              <span class="kpi-subtext">Historical stock logs &amp; make details</span>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table" style="width: 100%;">
+                <thead>
+                  <tr>
+                    <th>Indent No</th>
+                    <th>Date</th>
+                    <th>Material Name</th>
+                    <th>Make / Brand</th>
+                    <th>Quantity</th>
+                    <th>Amount</th>
+                    <th>Source</th>
+                    <th>Item Invoice</th>
+                    <th style="text-align: center; width: 60px;">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="purchases-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Previous Stock Entry Section -->
+        <div id="purchase-prev-section" style="display:none;">
+          <div class="glass-card" style="margin-bottom: 24px;">
+            <h2 class="glass-card-title">
+              <i data-lucide="archive"></i>
+              Previous Stock Entry
+            </h2>
+            <p class="kpi-subtext" style="margin-bottom:18px; line-height:1.6;">
+              Use this form to record materials that were already purchased <strong>before</strong> this application was set up.
+              You can enter just the <em>purchased quantity</em> and <em>current left quantity</em> — usage details are optional and can be skipped.
+            </p>
+            <form id="prev-stock-form">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" for="prev-indent">Indent No. <span style="font-weight: normal; color: var(--text-muted);">(Optional)</span></label>
+                  <input type="text" class="form-input" id="prev-indent" placeholder="e.g. PREV-2025-01 or leave blank">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="prev-material-name">Material Name</label>
+                  <input type="text" class="form-input" id="prev-material-name" required placeholder="e.g. 2.5 sqmm FR Copper Wire" list="prev-material-suggestions">
+                  <datalist id="prev-material-suggestions"></datalist>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="prev-make">Make / Brand</label>
+                  <input type="text" class="form-input" id="prev-make" placeholder="e.g. Havells, Polycab, Finolex" list="make-suggestions">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" for="prev-unit">Unit</label>
+                  <select class="form-select" id="prev-unit">
+                    <option value="Nos">Nos</option>
+                    <option value="Coils">Coils</option>
+                    <option value="Meters">Meters</option>
+                    <option value="Rolls">Rolls</option>
+                    <option value="Sets">Sets</option>
+                    <option value="Pairs">Pairs</option>
+                    <option value="Boxes">Boxes</option>
+                    <option value="Kg">Kg</option>
+                    <option value="Liters">Liters</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="prev-source">Purchase Source</label>
+                  <select class="form-select" id="prev-source">
+                    <option value="GEM">GEM Portal</option>
+                    <option value="Local Market">Local Market</option>
+                    <option value="Tender Work">Tender Work</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="prev-purchased-qty">Total Purchased Quantity</label>
+                  <input type="number" step="any" min="0.01" class="form-input" id="prev-purchased-qty" required placeholder="Total qty purchased">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="prev-left-qty">Current Left / Available Quantity</label>
+                  <input type="number" step="any" min="0" class="form-input" id="prev-left-qty" required placeholder="How much is remaining now">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" for="prev-date">Approx. Purchase Date</label>
+                  <input type="date" class="form-input" id="prev-date">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="prev-rate">Rate per Unit (₹)</label>
+                  <input type="number" step="any" min="0" class="form-input" id="prev-rate" placeholder="Optional – enter if known">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="prev-po-link">Item Invoice PDF (File Upload / Drive Link)</label>
+                  <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="file" id="prev-file-input" accept=".pdf,image/png,image/jpeg,image/jpg" style="display: none;">
+                    <button type="button" class="btn btn-secondary" id="prev-file-btn" style="padding: 8px 12px; font-size: 0.8rem; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px;">
+                      <i data-lucide="upload-cloud" style="width: 14px; height: 14px;"></i> Select File
+                    </button>
+                    <input type="url" class="form-input" id="prev-po-link" placeholder="Paste Google Drive PDF URL (Optional)" style="flex: 1;">
+                  </div>
+                  <span id="prev-file-name-hint" class="kpi-subtext" style="margin-top: 4px; display: none; color: var(--success); font-weight: 600;"></span>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="prev-remarks">Remarks</label>
+                  <input type="text" class="form-input" id="prev-remarks" placeholder="e.g. Stock carried from previous year">
+                </div>
+              </div>
+              <div class="form-actions" style="margin-top:16px;">
+                <button type="submit" class="btn btn-primary">
+                  <i data-lucide="save"></i>
+                  Save Previous Stock
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Previous Stock History -->
+          <div class="table-card" style="width: 100%;">
+            <div class="chart-header" style="padding: 20px 24px; border-bottom: 1px solid var(--border-color);">
+              <span class="chart-title">Previous Stock Records</span>
+              <span class="kpi-subtext">Pre-existing inventory entries &amp; make details</span>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table" style="width: 100%;">
+                <thead>
+                  <tr>
+                    <th>Indent No</th>
+                    <th>Material Name</th>
+                    <th>Make / Brand</th>
+                    <th>Purchased Qty</th>
+                    <th>Left Qty</th>
+                    <th>Used (calc.)</th>
+                    <th>Unit</th>
+                    <th>Source</th>
+                    <th>Status Alert</th>
+                    <th style="text-align: center; width: 110px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="prev-stock-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: USAGE ENTRY -->
+      <div class="tab-panel" id="usages-tab">
+        <!-- Top Form Card -->
+        <div class="glass-card" style="margin-bottom: 24px;">
+          <h2 class="glass-card-title">
+            <i data-lucide="minus-circle"></i>
+            Record Material Usage
+          </h2>
+          <form id="usage-form">
+            <div class="form-row">
+              <div class="form-group" style="flex: 1; min-width: 200px;">
+                <label class="form-label" for="usage-date">Date Used (Click to open Calendar)</label>
+                <input type="date" class="form-input" id="usage-date" required>
+                <span class="kpi-subtext" style="margin-top:4px; display:block;">Select date material was used</span>
+              </div>
+              <div class="form-group" style="flex: 2; min-width: 260px;">
+                <label class="form-label" for="usage-material">Material Name</label>
+                <select class="form-select" id="usage-material" required>
+                  <option value="" disabled selected>Select a material in stock...</option>
+                  <!-- Populated dynamically with materials that have > 0 stock -->
+                </select>
+              </div>
+              <div class="form-group" style="flex: 1; min-width: 170px;">
+                <label class="form-label" for="usage-quantity">Quantity to Use</label>
+                <input type="number" step="any" min="0.01" class="form-input" id="usage-quantity" required placeholder="Enter quantity">
+                <span class="kpi-subtext" id="usage-max-hint" style="margin-top: 4px; display: block; color: var(--text-secondary);"></span>
+              </div>
+            </div>
+
+            <!-- Previous Purchases Info Card for Selected Material -->
+            <div id="usage-purchases-breakdown" style="background: rgba(15, 23, 42, 0.5); border: 1px solid var(--border-color); border-radius: 12px; padding: 14px 16px; margin-bottom: 18px; display: none;">
+              <!-- Populated dynamically by app.js when material is selected -->
+            </div>
+
+            <div class="form-row" style="align-items: flex-start;">
+              <div class="form-group" style="flex: 1.5; min-width: 240px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                  <label class="form-label" for="usage-block-type" style="margin-bottom:0;">Where Used — Block / Quarter Type</label>
+                  <button type="button" class="btn btn-secondary" id="open-add-building-btn" style="padding: 4px 10px; font-size: 0.78rem; width: auto; min-width: unset; display: flex; align-items: center; gap: 4px;">
+                    <i data-lucide="plus-circle" style="width:13px; height:13px;"></i> Add Building
+                  </button>
+                </div>
+                <select class="form-select" id="usage-block-type" required>
+                  <option value="" disabled selected>Select block or area type...</option>
+                  <optgroup label="Quarters">
+                    <option value="A&amp;B">A&amp;B Block</option>
+                    <option value="C">C-Type Quarter (C1 to C9)</option>
+                    <option value="D">D-Type Quarter (D1 to D20)</option>
+                    <option value="E">E-Type Quarter (E1 to E28)</option>
+                    <option value="F">F-Type Quarter (F1 to F52)</option>
+                    <option value="G">G-Type Quarter (G1 to G88)</option>
+                    <option value="SRU">SRU Quarter (SRU1 to SRU32)</option>
+                    <option value="DRU">DRU Quarter (DRU1 to DRU44)</option>
+                    <option value="TRU">TRU Quarter (TRU1 to TRU12)</option>
+                  </optgroup>
+                  <optgroup label="Guest Houses &amp; Schools">
+                    <option value="Abhinandhan Guest house">Abhinandhan Guest House</option>
+                    <option value="Atithi Guest house">Atithi Guest House</option>
+                    <option value="ZM school">ZM School</option>
+                  </optgroup>
+                  <optgroup label="Hostel">
+                    <option value="Pragyan">Pragyan Hostel (Rooms 01–16, 101–116 … 501–516)</option>
+                  </optgroup>
+                  <optgroup label="Electrical Substations">
+                    <option value="Electrical Substation">Electrical Substation (SS-I, SS-II, SS-III)</option>
+                    <option value="SS-I">Substation I (SS-I)</option>
+                    <option value="SS-II">Substation II (SS-II)</option>
+                    <option value="SS-III">Substation III (SS-III)</option>
+                  </optgroup>
+                  <optgroup label="Pump Houses &amp; Water Supply">
+                    <option value="Pump House">Pump House (Internal, Habsiguda, NEERI, Colony Borewell)</option>
+                    <option value="Internal Pump House">Internal Pump House</option>
+                    <option value="Habsiguda Pump House">Habsiguda Pump House</option>
+                    <option value="NEERI Pump House">NEERI Pump House</option>
+                    <option value="Colony Borewell">Colony Borewell</option>
+                  </optgroup>
+                  <optgroup label="Street Lighting">
+                    <option value="Street Lights">Street Lights (Incampus, Outcampus)</option>
+                    <option value="Incampus Street Lights">Incampus Street Lights</option>
+                    <option value="Outcampus Street Lights">Outcampus Street Lights</option>
+                  </optgroup>
+                  <optgroup label="Other Locations">
+                    <option value="Main Office Building">Main Office Building</option>
+                    <option value="Conference Hall">Conference Hall</option>
+                    <option value="Staff Club">Staff Club</option>
+                    <option value="Dispensary">Dispensary</option>
+                    <option value="NEERI">NEERI</option>
+                    <option value="Post Office">Post Office</option>
+                    <option value="Fire Station">Fire Station</option>
+                    <option value="Security">Security</option>
+                    <option value="PPC Moulali">PPC Moulali</option>
+                    <option value="Common Area">Common Area / Corridor</option>
+                    <option value="Other">Other (specify below)</option>
+                  </optgroup>
+                  <optgroup label="Custom Added Buildings" id="usage-custom-optgroup" style="display:none;"></optgroup>
+                </select>
+              </div>
+
+              <div class="form-group" id="usage-unit-group" style="display:none; flex: 1; min-width: 180px;">
+                <label class="form-label" id="usage-unit-label" for="usage-unit-number">Unit / Quarter Number</label>
+                <select class="form-select" id="usage-unit-number">
+                  <option value="" disabled selected>Select unit number...</option>
+                </select>
+              </div>
+
+              <div class="form-group" id="usage-other-group" style="display:none; flex: 1; min-width: 180px;">
+                <label class="form-label" for="usage-other-text">Specify Location</label>
+                <input type="text" class="form-input" id="usage-other-text" placeholder="e.g. Water Tank Room, Guard Post">
+              </div>
+
+              <input type="hidden" id="usage-location">
+
+              <div class="form-group" style="flex: 2; min-width: 240px;">
+                <label class="form-label" for="usage-remarks">Remarks / Description</label>
+                <input type="text" class="form-input" id="usage-remarks" placeholder="e.g. Replaced faulty switches and wiring">
+              </div>
+
+              <div class="form-group" style="flex: 0 0 auto; align-self: flex-end; margin-bottom: 0;">
+                <button type="submit" class="btn btn-primary" style="width: auto; padding: 11px 26px;">
+                  <i data-lucide="activity"></i>
+                  Save Usage Log
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <!-- Full-Width Bottom History Table -->
+        <div class="table-card" style="width: 100%;">
+          <div class="chart-header" style="padding: 20px 24px; border-bottom: 1px solid var(--border-color);">
+            <span class="chart-title">Usage History</span>
+            <span class="kpi-subtext">Log of maintenance usage across quarters, substations &amp; facilities</span>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" style="width: 100%;">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Material Name</th>
+                  <th>Quantity</th>
+                  <th>Where Used</th>
+                  <th>Remarks</th>
+                </tr>
+              </thead>
+              <tbody id="usages-table-body">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: COMPLETED STOCK FOLDER -->
+      <div class="tab-panel" id="completed-stock-tab">
+        <div class="table-card" style="width: 100%; margin-bottom: 24px;">
+          <!-- Folder Header -->
+          <div style="padding: 22px 26px; border-bottom: 1px solid var(--border-color); background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(69, 10, 10, 0.28)); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+            <div>
+              <h2 class="glass-card-title" style="margin-bottom: 4px; font-size: 1.25rem; display: flex; align-items: center; gap: 10px; border-bottom: none; padding-bottom: 0; color: #fca5a5;">
+                <i data-lucide="folder-archive" style="color: var(--danger); width: 24px; height: 24px;"></i>
+                Completed Stock Folder
+              </h2>
+              <p class="kpi-subtext" style="margin: 0; font-size: 0.85rem; line-height: 1.5;">
+                Materials where available stock is fully exhausted (0 Available). View complete traceability: originating Indent No(s), purchased vs used quantities, and the exact facilities and quarters where items were consumed.
+              </p>
+            </div>
+            <div style="min-width: 260px; max-width: 380px; flex: 1;">
+              <div class="search-wrapper" style="width: 100%;">
+                <i data-lucide="search"></i>
+                <input type="text" class="form-input search-input" id="completed-stock-search-input" placeholder="Search completed items, indents, or where used...">
+              </div>
+            </div>
+          </div>
+
+          <!-- KPI Summary Cards for Completed Stock -->
+          <div id="completed-stock-kpis" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; padding: 18px 24px; background: rgba(15, 23, 42, 0.55); border-bottom: 1px solid var(--border-color);">
+            <!-- Populated dynamically by app.js -->
+          </div>
+
+          <!-- Main Completed Stock Table -->
+          <div class="table-responsive">
+            <table class="data-table" id="completed-stock-table" style="width: 100%; margin: 0;">
+              <thead>
+                <tr>
+                  <th style="width: 38px; text-align: center;">#</th>
+                  <th>Completed Material Name</th>
+                  <th>Originating Indent No(s) &amp; Split</th>
+                  <th style="text-align: center;">Purchased</th>
+                  <th style="text-align: center;">Consumed (Used)</th>
+                  <th style="text-align: center;">Status</th>
+                  <th>Where Respective Items Used (Location Breakdown)</th>
+                  <th style="text-align: center; width: 120px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="completed-stock-table-body">
+                <!-- Populated dynamically by app.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 5: SETTINGS & SHEET SETUP -->
+      <div class="tab-panel" id="settings-tab">
+        <div class="content-split">
+          <!-- Connection Settings Card -->
+          <div class="glass-card">
+            <h2 class="glass-card-title">
+              <i data-lucide="link"></i>
+              Google Sheets Connection
+            </h2>
+            <div class="form-group">
+              <label class="form-label" for="settings-sheet-url">Google Apps Script Web App URL</label>
+              <input type="url" class="form-input" id="settings-sheet-url" placeholder="https://script.google.com/macros/s/.../exec">
+              <span class="kpi-subtext" style="margin-top: 4px; display: block;">
+                Must start with <code>https://script.google.com/macros/s/</code> and end with <code>/exec</code>.
+              </span>
+            </div>
+            <div class="form-row">
+              <button class="btn btn-secondary" id="test-connection-btn">
+                <i data-lucide="check-circle-2"></i>
+                Test Connection
+              </button>
+              <button class="btn btn-primary" id="save-settings-btn">
+                <i data-lucide="save"></i>
+                Save Configuration
+              </button>
+            </div>
+            <div class="form-group" style="margin-top: 10px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+              <label class="form-label">Multi-PC Sync & Invoice Actions</label>
+              <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                <div style="font-size: 0.82rem; color: #a5b4fc; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                  <i data-lucide="share-2" style="width: 14px; height: 14px;"></i> Multi-PC Visibility Note
+                </div>
+                <div style="font-size: 0.78rem; color: #cbd5e1; line-height: 1.45;">
+                  Every PC that opens this application must have the Google Apps Script Web App URL saved in Settings (or configured as <code>DEFAULT_SHEET_URL</code> in <code>app.js</code>) so all computers connect to the same Google Sheet & Google Drive.
+                </div>
+              </div>
+              <button class="btn btn-secondary" id="sync-local-invoices-btn" style="width: 100%; margin-bottom: 10px; color: #34d399; border-color: rgba(52, 211, 153, 0.35); background: rgba(52, 211, 153, 0.1); display: inline-flex; align-items: center; justify-content: center; gap: 8px;">
+                <i data-lucide="upload-cloud" style="width: 16px; height: 16px;"></i>
+                Push Local Invoices to Google Drive (Make Visible on All PCs)
+              </button>
+              <button class="btn btn-danger" id="reset-data-btn" style="margin-top: 4px;">
+                <i data-lucide="trash-2"></i>
+                Reset to Demo Data
+              </button>
+            </div>
+          </div>
+
+          <!-- Configuration instructions -->
+          <div class="glass-card">
+            <h2 class="glass-card-title">
+              <i data-lucide="help-circle"></i>
+              Google Sheet Setup Instructions
+            </h2>
+            <div class="sheet-link-box">
+              <a href="https://docs.google.com/spreadsheets/d/1a1mS5bTzXOWJenRossHYUN0MGiCf8N1pRe8sulVOaE4/edit?usp=sharing" target="_blank">
+                <i data-lucide="external-link"></i>
+                Open Target Google Sheet
+              </a>
+            </div>
+            <div class="setup-guide">
+              <div class="setup-step">
+                <span class="step-num">1</span>
+                <div class="step-desc">
+                  Open the target Google Sheet linked above. Click <strong>Extensions</strong> -> <strong>Apps Script</strong>.
+                </div>
+              </div>
+              <div class="setup-step">
+                <span class="step-num">2</span>
+                <div class="step-desc">
+                  Delete any existing code in the editor, and paste the code from <code>google-apps-script.js</code> (located in this project directory).
+                  <div class="copy-wrapper">
+                    <button class="copy-btn" id="copy-script-btn">Copy Script Code</button>
+                  </div>
+                </div>
+              </div>
+              <div class="setup-step">
+                <span class="step-num">3</span>
+                <div class="step-desc">
+                  Save the script, then click <strong>Deploy</strong> -> <strong>New deployment</strong>.
+                </div>
+              </div>
+              <div class="setup-step">
+                <span class="step-num">4</span>
+                <div class="step-desc">
+                  Click the gear icon âš™ï¸ (Select type) and choose <strong>Web app</strong>. Configure details:
+                  <ul style="margin-left: 20px; margin-top: 6px;">
+                    <li><strong>Execute as:</strong> "Me (your-email@gmail.com)"</li>
+                    <li><strong>Who has access:</strong> "Anyone" (Necessary for local browser access)</li>
+                  </ul>
+                </div>
+              </div>
+              <div class="setup-step">
+                <span class="step-num">5</span>
+                <div class="step-desc">
+                  Click <strong>Deploy</strong>, grant required account permissions. Copy the <strong>Web app URL</strong>. Paste it into the connection settings form on the left.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Edit Make / Brand Modal Popup -->
+  <div class="modal-overlay" id="make-modal">
+    <div class="modal-content glass-card" style="max-width: 520px; width: 92%;">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 14px; margin-bottom: 18px;">
+        <h2 class="glass-card-title" style="margin-bottom: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 8px; color: #a5b4fc;">
+          <i data-lucide="tag" style="color: var(--primary); width: 22px; height: 22px;"></i>
+          Manual Entry of Make / Brand
+        </h2>
+        <button type="button" class="btn btn-secondary" id="close-make-modal-btn" style="width: auto; padding: 6px 12px; font-size: 0.8rem;">
+          <i data-lucide="x" style="width: 14px; height: 14px;"></i>
+        </button>
+      </div>
+      <form id="make-form">
+        <input type="hidden" id="make-purchase-index">
+        <input type="hidden" id="make-target-type"> <!-- 'purchase' or 'prev' or 'material' -->
+        <div class="form-row">
+          <div class="form-group" style="flex: 1.4;">
+            <label class="form-label" for="make-display-material">Material Name</label>
+            <input type="text" class="form-input" id="make-display-material" disabled style="background: rgba(15, 23, 42, 0.6); font-weight: 600; color: #34d399;">
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label class="form-label" for="make-display-indent">Indent / Scope</label>
+            <input type="text" class="form-input" id="make-display-indent" disabled style="background: rgba(15, 23, 42, 0.6); font-family: monospace; font-size: 0.82rem;">
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label class="form-label" for="make-input-val" style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-weight: 700; color: #c7d2fe;">Make / Brand Name (Manual Entry)</span>
+            <span class="kpi-subtext" style="font-size: 0.75rem;">Type custom name or pick brand</span>
+          </label>
+          <input type="text" class="form-input" id="make-input-val" placeholder="Type custom brand / make name (e.g. Crompton, Havells, Polycab...)" list="make-suggestions" style="font-size: 0.95rem; font-weight: 600; border-color: rgba(99, 102, 241, 0.45); height: 44px;" required autocomplete="off">
+          <span class="kpi-subtext" style="margin-top: 5px; display: block; font-size: 0.78rem;">
+            ✏️ Type any custom manufacturer or brand name freely. It will be saved permanently.
+          </span>
+        </div>
+
+        <!-- Quick 1-Click Brand Chips -->
+        <div style="margin-bottom: 16px;">
+          <label class="kpi-subtext" style="display: block; font-size: 0.74rem; margin-bottom: 7px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">Popular Brands (Click to autofill):</label>
+          <div id="make-quick-chips" style="display: flex; flex-wrap: wrap; gap: 6px; max-height: 85px; overflow-y: auto; padding: 2px;">
+            <!-- Injected dynamically by JS -->
+          </div>
+        </div>
+
+        <!-- Scope Option: Apply to all entries of this material -->
+        <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 8px; padding: 10px 14px; margin-bottom: 18px;">
+          <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 0.82rem; color: var(--text-primary); margin: 0;">
+            <input type="checkbox" id="make-apply-all-checkbox" style="margin-top: 3px; width: 16px; height: 16px; accent-color: var(--primary);">
+            <span>
+              <strong>Apply this Make / Brand to all entries of this material</strong>
+              <span class="kpi-subtext" style="display: block; font-size: 0.74rem; margin-top: 2px;">Automatically updates all purchase receipts, stock inventory, and previous stock records.</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="form-row" style="margin-top: 14px; justify-content: flex-end; gap: 10px;">
+          <button type="button" class="btn btn-secondary" id="close-make-modal-cancel-btn" style="width: auto; padding: 9px 20px;">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="save-make-modal-btn" style="width: auto; padding: 9px 24px;">
+            <i data-lucide="check"></i> Save Make / Brand
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Threshold Edit Modal Popup -->
+  <div class="modal-overlay" id="threshold-modal">
+    <div class="modal-content glass-card">
+      <h2 class="glass-card-title">
+        <i data-lucide="edit-3"></i>
+        Edit Stock Threshold
+      </h2>
+      <form id="threshold-form">
+        <input type="hidden" id="threshold-material-name">
+        <div class="form-group">
+          <label class="form-label" for="threshold-display-name">Material Name</label>
+          <input type="text" class="form-input" id="threshold-display-name" disabled>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="threshold-value">Low Stock Threshold Limit</label>
+          <input type="number" step="any" min="0" class="form-input" id="threshold-value" required placeholder="e.g. 20">
+          <span class="kpi-subtext" style="margin-top: 4px; display: block;" id="threshold-unit-hint">Unit: Nos</span>
+        </div>
+        <div class="form-row" style="margin-top: 12px;">
+          <button type="button" class="btn btn-secondary" id="close-modal-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Full Edit Previous Stock Modal Popup -->
+  <div class="modal-overlay" id="edit-prev-stock-modal">
+    <div class="modal-content glass-card" style="max-width: 560px;">
+      <h2 class="glass-card-title">
+        <i data-lucide="edit-3"></i>
+        Edit Previous Stock Record
+      </h2>
+      <form id="edit-prev-stock-form">
+        <input type="hidden" id="edit-prev-index">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="edit-prev-indent">Indent No. (Optional / Pre-existing)</label>
+            <input type="text" class="form-input" id="edit-prev-indent" placeholder="e.g. PREV-2025-01">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="edit-prev-material-name">Material Name</label>
+            <input type="text" class="form-input" id="edit-prev-material-name" required placeholder="e.g. 2.5 sqmm FR Copper Wire">
+          </div>
+        </div>
+        <div class="form-group" id="edit-prev-indent-batch-wrap" style="display:none; margin-top: -6px; margin-bottom: 12px; background: rgba(99, 102, 241, 0.08); padding: 8px 12px; border-radius: 6px; border: 1px dashed rgba(99, 102, 241, 0.3);">
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: #a5b4fc; cursor: pointer; margin: 0;">
+            <input type="checkbox" id="edit-prev-update-all-indent-items" style="cursor: pointer; width: 14px; height: 14px;">
+            <span>Apply this Indent No. to all other materials under this indent (<span id="edit-prev-batch-count">0</span> other items)</span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="edit-prev-make">Make / Brand</label>
+          <input type="text" class="form-input" id="edit-prev-make" placeholder="e.g. Havells, Polycab" list="make-suggestions">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="edit-prev-unit">Unit</label>
+            <select class="form-select" id="edit-prev-unit">
+              <option value="Nos">Nos</option>
+              <option value="Coils">Coils</option>
+              <option value="Meters">Meters</option>
+              <option value="Rolls">Rolls</option>
+              <option value="Sets">Sets</option>
+              <option value="Pairs">Pairs</option>
+              <option value="Boxes">Boxes</option>
+              <option value="Kg">Kg</option>
+              <option value="Liters">Liters</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="edit-prev-source">Purchase Source</label>
+            <select class="form-select" id="edit-prev-source">
+              <option value="GEM">GEM Portal</option>
+              <option value="Local Market">Local Market</option>
+              <option value="Tender Work">Tender Work</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="edit-prev-purchased-qty">Total Purchased Qty</label>
+            <input type="number" step="any" min="0.01" class="form-input" id="edit-prev-purchased-qty" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="edit-prev-left-qty">Current Left / Available Qty</label>
+            <input type="number" step="any" min="0" class="form-input" id="edit-prev-left-qty" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="edit-prev-date">Approx. Purchase Date</label>
+            <input type="date" class="form-input" id="edit-prev-date">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="edit-prev-rate">Rate per Unit (₹)</label>
+            <input type="number" step="any" min="0" class="form-input" id="edit-prev-rate" placeholder="Optional">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="edit-prev-po-link">Item Invoice PDF (Google Drive Link)</label>
+          <input type="url" class="form-input" id="edit-prev-po-link" placeholder="Paste Google Drive PDF URL (Optional)">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="edit-prev-remarks">Remarks</label>
+          <input type="text" class="form-input" id="edit-prev-remarks" placeholder="Remarks">
+        </div>
+        <div class="form-row" style="margin-top: 16px;">
+          <button type="button" class="btn btn-secondary" id="close-edit-prev-modal-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary">
+            <i data-lucide="check"></i> Save Changes
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add New Building / Area Modal Popup -->
+  <div class="modal-overlay" id="add-building-modal">
+    <div class="modal-content glass-card" style="max-width: 440px;">
+      <h2 class="glass-card-title">
+        <i data-lucide="plus-circle"></i>
+        Add New Building / Area
+      </h2>
+      <form id="add-building-form">
+        <div class="form-group">
+          <label class="form-label" for="new-building-name">Building / Area Name</label>
+          <input type="text" class="form-input" id="new-building-name" required placeholder="e.g. Substation Building, Staff Club, Hall 3">
+        </div>
+        <div class="form-row" style="margin-top: 14px;">
+          <button type="button" class="btn btn-secondary" id="close-add-building-modal-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary">
+            <i data-lucide="check"></i> Add Building
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- KPI Drill-down Modal -->
+  <div class="modal-overlay" id="kpi-drilldown-modal">
+    <div class="modal-content glass-card" style="max-width:900px; width:92%; padding:28px 28px 24px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+        <h2 class="glass-card-title" style="margin-bottom:0;" id="kpi-drilldown-title">
+          <i data-lucide="package-open" id="kpi-drilldown-icon"></i>
+          <span id="kpi-drilldown-heading">Material List</span>
+        </h2>
+        <button class="btn btn-secondary" id="close-drilldown-btn" style="width:auto;padding:6px 14px;font-size:0.82rem;flex-shrink:0;">
+          <i data-lucide="x" style="width:14px;height:14px;"></i> Close
+        </button>
+      </div>
+      <div style="max-height:65vh; overflow-y:auto; overflow-x:hidden;">
+        <table class="data-table" id="kpi-drilldown-table" style="width:100%; table-layout:fixed;">
+          <thead id="kpi-drilldown-thead"></thead>
+          <tbody id="kpi-drilldown-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invoice & Item Clarity Viewer Modal -->
+  <div class="modal-overlay" id="invoice-viewer-modal">
+    <div class="modal-content glass-card" style="max-width: 98vw; width: 98vw; height: 95vh; max-height: 95vh; display: flex; flex-direction: column; padding: 24px; border-radius: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 14px; margin-bottom: 16px; flex-shrink: 0;">
+        <div>
+          <h2 class="glass-card-title" style="margin-bottom: 2px; font-size: 1.25rem; display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="file-text" style="color: var(--primary); width: 20px; height: 20px;"></i>
+            Invoice &amp; Item Clarity Details
+          </h2>
+          <p class="kpi-subtext" id="invoice-modal-subtitle">Full purchase information and official item invoice document</p>
+        </div>
+        <button type="button" class="btn btn-secondary" id="close-invoice-modal-btn" style="width: auto; padding: 6px 14px; font-size: 0.82rem; flex-shrink: 0;">
+          <i data-lucide="x" style="width: 14px; height: 14px;"></i> Close
+        </button>
+      </div>
+      <div style="overflow-y: auto; flex: 1; padding-right: 4px;" id="invoice-modal-body">
+        <!-- Dynamically rendered by app.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Material 360 Traceability Modal -->
+  <div class="modal-overlay" id="material-detail-modal">
+    <div class="modal-content glass-card" style="max-width: 98vw; width: 98vw; height: 95vh; max-height: 95vh; display: flex; flex-direction: column; padding: 26px; border-radius: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 14px; margin-bottom: 16px; flex-shrink: 0;">
+        <div>
+          <h2 class="glass-card-title" style="margin-bottom: 2px; font-size: 1.25rem;" id="mat-detail-title">Material Traceability</h2>
+          <p class="kpi-subtext" id="mat-detail-subtitle">Complete purchase, availability, and usage location log</p>
+        </div>
+        <button type="button" class="btn btn-secondary" id="close-mat-detail-modal-btn" style="width: auto; padding: 6px 14px; font-size: 0.82rem; flex-shrink: 0;">
+          <i data-lucide="x" style="width: 14px; height: 14px;"></i> Close
+        </button>
+      </div>
+      <div style="overflow-y: auto; flex: 1; padding-right: 4px;" id="mat-detail-body">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Login Screen Overlay -->
+  <div class="modal-overlay active" id="login-overlay" style="z-index: 5000; background: radial-gradient(circle at top right, #0f172a, #020617);">
+    <div class="modal-content glass-card" style="width: 100%; max-width: 420px; border: 1px solid rgba(255, 255, 255, 0.08); padding: 40px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);">
+      <div class="sidebar-header" style="justify-content: center; padding: 0 0 24px 0; margin-bottom: 12px; border-bottom: 1px solid var(--border-color);">
+        <div class="logo-icon"><i data-lucide="zap"></i></div>
+        <div class="logo-text" style="font-size: 1.4rem;">Electrical Inventory</div>
+      </div>
+      <h2 style="text-align: center; margin-bottom: 8px; font-weight: 700; font-size: 1.5rem; letter-spacing: 0.5px;">System Login</h2>
+      <p class="kpi-subtext" style="text-align: center; margin-bottom: 24px; font-size: 0.9rem;">Please sign in to manage or view maintaining stocks.</p>
+      
+      <form id="login-form">
+        <div class="form-group">
+          <label class="form-label" for="login-username">Username</label>
+          <input type="text" class="form-input" id="login-username" required placeholder="Enter username">
+        </div>
+        <div class="form-group" style="margin-bottom: 24px;">
+          <label class="form-label" for="login-password">Password</label>
+          <input type="password" class="form-input" id="login-password" required placeholder="Enter password">
+        </div>
+        <button type="submit" class="btn btn-primary" style="margin-bottom: 16px;">
+          <i data-lucide="log-in"></i> Login to Electrical Inventory
+        </button>
+      </form>
+      
+
+    </div>
+  </div>
+
+  <!-- Reupload / Change Invoice Modal Popup -->
+  <div class="modal-overlay" id="reupload-invoice-modal">
+    <div class="modal-content glass-card" style="max-width: 580px; width: 92%;">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 14px; margin-bottom: 16px;">
+        <h2 class="glass-card-title" style="margin-bottom: 0; font-size: 1.2rem; display: flex; align-items: center; gap: 8px;">
+          <i data-lucide="upload-cloud" style="color: var(--primary); width: 20px; height: 20px;"></i>
+          <span id="reupload-modal-title-text">Attach / Upload PO or Invoice Document</span>
+        </h2>
+        <button type="button" class="btn btn-secondary" id="close-reupload-modal-btn" style="width: auto; padding: 5px 12px; font-size: 0.8rem;">
+          <i data-lucide="x" style="width: 14px; height: 14px;"></i>
+        </button>
+      </div>
+
+      <form id="reupload-invoice-form">
+        <input type="hidden" id="reupload-purchase-index">
+        <input type="hidden" id="reupload-target-type"> <!-- 'purchase', 'indent', or 'prev' -->
+
+        <!-- Item Info Header -->
+        <div style="background: rgba(15, 23, 42, 0.5); border: 1px solid var(--border-color); padding: 12px 14px; border-radius: 8px; margin-bottom: 16px;">
+          <div style="font-size: 0.8rem; color: var(--text-muted);" id="reupload-scope-label">Target Material:</div>
+          <div style="font-size: 1rem; font-weight: 700; color: var(--text-primary);" id="reupload-mat-name">—</div>
+          <div style="font-size: 0.78rem; color: var(--primary); font-family: monospace; margin-top: 2px;" id="reupload-indent-no">—</div>
+        </div>
+
+        <!-- Attachment Mode Selection -->
+        <div class="reupload-tabs" style="display: flex; gap: 8px; margin-bottom: 16px;">
+          <button type="button" class="btn btn-secondary active" id="tab-mode-url" style="flex: 1; padding: 8px 12px; font-size: 0.82rem; border-color: rgba(52, 211, 153, 0.4); background: rgba(52, 211, 153, 0.15); color: #34d399;">
+            <i data-lucide="link-2" style="width: 14px; height: 14px; margin-right: 4px;"></i> Google Drive Link (Cross-Device)
+          </button>
+          <button type="button" class="btn btn-secondary" id="tab-mode-file" style="flex: 1; padding: 8px 12px; font-size: 0.82rem;">
+            <i data-lucide="file-up" style="width: 14px; height: 14px; margin-right: 4px;"></i> Local File Upload
+          </button>
+        </div>
+
+        <!-- Mode A: Google Drive URL Container (Default) -->
+        <div id="reupload-url-container" class="form-group" style="display: block; margin-bottom: 16px;">
+          <label class="form-label" for="reupload-url-input">Google Drive Document Link (PDF or Image)</label>
+          <input type="url" class="form-input" id="reupload-url-input" placeholder="Paste Google Drive link (e.g. https://drive.google.com/file/d/...)" style="border-color: rgba(52, 211, 153, 0.4); background: rgba(52, 211, 153, 0.05); padding: 10px 14px; font-size: 0.88rem;">
+          <div style="margin-top: 10px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 10px 14px; font-size: 0.78rem; color: #cbd5e1; line-height: 1.5;">
+            <div style="font-weight: 700; color: #34d399; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+              <i data-lucide="info" style="width: 14px; height: 14px;"></i> Simple 3-Step Cross-PC Setup (No API Key Required):
+            </div>
+            1. Upload your PO/Invoice PDF or Photo to your Google Drive.<br>
+            2. Right-click the file &rarr; <strong>Share</strong> &rarr; change General Access to <strong>"Anyone with the link can view"</strong> &rarr; <strong>Copy link</strong>.<br>
+            3. Paste the copied link above and click <strong>Save &amp; Attach</strong>. It will immediately show across all PCs and mobiles!
+          </div>
+        </div>
+
+        <!-- Mode B: File Upload Zone -->
+        <div id="reupload-file-container" class="form-group" style="display: none; margin-bottom: 16px;">
+          <label class="form-label" for="reupload-file-input">Select PO or Invoice File (.pdf, .png, .jpg, .jpeg)</label>
+          <div class="file-dropzone" id="reupload-dropzone" style="border: 2px dashed rgba(99, 102, 241, 0.4); border-radius: 12px; padding: 24px; text-align: center; background: rgba(15, 23, 42, 0.4); cursor: pointer; transition: all 0.2s ease;">
+            <i data-lucide="file-text" style="width: 36px; height: 36px; color: var(--primary); margin-bottom: 8px;"></i>
+            <div style="font-weight: 600; font-size: 0.9rem; color: var(--text-primary);">Click or drag & drop PO/Invoice document here</div>
+            <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 4px;">Supports PDF documents and images (.pdf, .jpg, .jpeg, .png — Max 10MB)</div>
+            <input type="file" id="reupload-file-input" accept=".pdf,image/png,image/jpeg,image/jpg" style="display: none;">
+          </div>
+          <div id="reupload-file-info" style="display: none; margin-top: 10px; padding: 10px 14px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
+              <i data-lucide="check-circle" style="color: var(--success); width: 16px; height: 16px; flex-shrink: 0;"></i>
+              <span id="reupload-file-name" style="font-size: 0.85rem; font-weight: 600; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">filename.pdf</span>
+            </div>
+            <button type="button" id="remove-selected-file-btn" style="background: none; border: none; color: var(--danger); cursor: pointer; padding: 2px;">
+              <i data-lucide="x" style="width: 14px; height: 14px;"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+          <button type="button" class="btn btn-danger" id="reupload-detach-btn" style="width: auto; padding: 8px 14px; font-size: 0.82rem; background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.3);">
+            <i data-lucide="trash-2" style="width: 13px; height: 13px; margin-right: 4px;"></i> Delete / Remove Invoice
+          </button>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-secondary" id="cancel-reupload-btn" style="width: auto; padding: 8px 16px;">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="save-reupload-btn" style="width: auto; padding: 8px 20px;">
+              <i data-lucide="save" style="width: 14px; height: 14px; margin-right: 4px;"></i> Save &amp; Attach
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notifications container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Main JavaScript App Logic -->
+  <script src="app.js?v=20"></script>
+</body>
+</html>
+
