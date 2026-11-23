@@ -806,14 +806,6 @@ async function applyInvoiceOverrides() {
 
   try {
     localStorage.setItem('electrastock_invoice_overrides', JSON.stringify(overrides));
-  } catch (e) {}
-}
-    p['poLink'] = p['PO Link'] || '';
-    p['fileUrl'] = p['PO Link'] || '';
-  }
-
-  try {
-    localStorage.setItem('electrastock_invoice_overrides', JSON.stringify(overrides));
   } catch (e) {
     console.warn('LocalStorage quota warning:', e);
   }
