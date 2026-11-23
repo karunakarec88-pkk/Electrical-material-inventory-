@@ -480,6 +480,24 @@ function loadConfiguration() {
     updateDbBadge(false);
   }
   
+  // Clean up any stale __DELETED__ flags from localStorage so Google Sheet data is never suppressed
+  try {
+    const raw = localStorage.getItem('electrastock_invoice_overrides');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      let changed = false;
+      Object.keys(parsed).forEach(k => {
+        if (parsed[k] === '__DELETED__') {
+          delete parsed[k];
+          changed = true;
+        }
+      });
+      if (changed) {
+        localStorage.setItem('electrastock_invoice_overrides', JSON.stringify(parsed));
+      }
+    }
+  } catch (e) {}
+
   // Set value in form input
   const inputEl = document.getElementById('settings-sheet-url');
   if (inputEl) inputEl.value = state.sheetUrl;
@@ -647,9 +665,23 @@ window.callAppsScript = function(params) {
 };
 
 /**
- * In Cloud mode, cleans up zombie invoice overrides from localStorage/IndexedDB.
- * If a cloud URL no longer exists in Google Sheets, it means it was deleted on another PC/mobile,
- * so this device must discard its local cache and never resurrect it.
+ * Normalizes a user-entered PO or invoice document URL.
+ * Automatically adds https:// if omitted (e.g. drive.google.com/...)
+ */
+function normalizeInvoiceLink(link) {
+  if (!link || typeof link !== 'string') return '';
+  let str = link.trim();
+  if (!str) return '';
+  if (str.startsWith('data:') || str.startsWith('idb:')) return str;
+  if (!str.startsWith('http://') && !str.startsWith('https://')) {
+    str = 'https://' + str;
+  }
+  return str;
+}
+
+/**
+ * In Cloud mode, cleans up stale local invoice overrides.
+ * If a cloud URL no longer exists in Google Sheets, cleans the local cache entry.
  */
 function sanitizeCloudOverrides() {
   if (state.appMode !== 'cloud' || !Array.isArray(state.purchases)) return;
@@ -661,48 +693,19 @@ function sanitizeCloudOverrides() {
 
     // Collect all valid PO links currently present in Google Sheets purchases
     const activeCloudLinks = new Set();
-    const activeIndentsWithDoc = new Set();
-    const allActiveIndents = new Set();
-    const itemHasCloudDoc = new Set();
-
     state.purchases.forEach(p => {
       const link = (p["PO Link"] || p.poLink || p.fileUrl || '').toString().trim();
-      const ind = (p["Indent No"] || p.indentNo || '').toString().trim().toLowerCase();
-      const pKey = makePurchaseKey(p);
-      if (ind) allActiveIndents.add(ind);
       if (link && (link.startsWith('http://') || link.startsWith('https://'))) {
         activeCloudLinks.add(link);
-        if (ind) activeIndentsWithDoc.add(ind);
-        itemHasCloudDoc.add(pKey);
       }
     });
 
+    // Remove any overrides containing URLs that are no longer in Google Sheets
     Object.keys(overrides).forEach(k => {
       const val = (overrides[k] || '').toString().trim();
-
-      // If override was an external URL (Google Drive / cloud link)
       if (val.startsWith('http://') || val.startsWith('https://')) {
-        // If this URL is NOT anywhere in the fresh Google Sheet data, it was deleted in the cloud!
         if (!activeCloudLinks.has(val)) {
-          overrides[k] = '__DELETED__';
-          modified = true;
-        }
-      }
-
-      // If it is an indent-level key (e.g. indent_67/elect/esd/2026)
-      if (k.startsWith('indent_')) {
-        const indName = k.replace('indent_', '').trim().toLowerCase();
-        // If this indent exists in purchases but has no document attached in the cloud
-        if (allActiveIndents.has(indName) && !activeIndentsWithDoc.has(indName)) {
-          if (overrides[k] !== '__DELETED__') {
-            overrides[k] = '__DELETED__';
-            modified = true;
-          }
-        }
-      } else if (k.includes('||')) {
-        // Purchase item key: if this item has no cloud doc, don't keep stale URL
-        if (!itemHasCloudDoc.has(k) && (val.startsWith('http://') || val.startsWith('https://'))) {
-          overrides[k] = '__DELETED__';
+          delete overrides[k];
           modified = true;
         }
       }
@@ -733,6 +736,19 @@ async function applyInvoiceOverrides() {
     const indentKey = 'indent_' + indentNo;
     const cleanIndentKey = 'indent_' + indentNo.toLowerCase();
 
+    // In Cloud mode, if Google Sheet has a live web link (Google Drive URL), Google Sheet is authoritative!
+    const cloudLink = (p['PO Link'] || p['poLink'] || p['fileUrl'] || '').toString().trim();
+    if (state.appMode === 'cloud' && (cloudLink.startsWith('http://') || cloudLink.startsWith('https://'))) {
+      p['PO Link'] = cloudLink;
+      p['poLink'] = cloudLink;
+      p['fileUrl'] = cloudLink;
+      // Clear any conflicting __DELETED__ marker in local overrides
+      if (overrides[key] === '__DELETED__') delete overrides[key];
+      if (overrides[indentKey] === '__DELETED__') delete overrides[indentKey];
+      if (overrides[cleanIndentKey] === '__DELETED__') delete overrides[cleanIndentKey];
+      continue;
+    }
+
     // If marked as __DELETED__, enforce complete blanking across all fields
     if (overrides[key] === '__DELETED__' || overrides[indentKey] === '__DELETED__' || overrides[cleanIndentKey] === '__DELETED__') {
       p['PO Link'] = '';
@@ -743,23 +759,10 @@ async function applyInvoiceOverrides() {
 
     // Check if an override exists specifically for this purchase item
     let overrideVal = overrides[key] || '';
-    // Only fall back to indent-level override if it is not marked deleted and not an item key
     if (!overrideVal && indentNo && (overrides[indentKey] || overrides[cleanIndentKey])) {
       const candidateIndentVal = overrides[indentKey] || overrides[cleanIndentKey];
       if (candidateIndentVal !== '__DELETED__' && !candidateIndentVal.includes('||')) {
         overrideVal = candidateIndentVal;
-      }
-    }
-
-    // In cloud mode: if the cloud returned empty PO Link for this purchase,
-    // NEVER resurrect an old http/https Google Drive URL from local overrides!
-    if (state.appMode === 'cloud') {
-      const cloudLink = (p['PO Link'] || p['poLink'] || p['fileUrl'] || '').toString().trim();
-      if (!cloudLink) {
-        if (overrideVal && (overrideVal.startsWith('http://') || overrideVal.startsWith('https://'))) {
-          overrideVal = '';
-          overrides[key] = '__DELETED__';
-        }
       }
     }
 
@@ -770,8 +773,9 @@ async function applyInvoiceOverrides() {
         p['PO Link'] = 'idb:' + storeKey;
         overrides[storeKey] = 'idb:' + storeKey;
       } else {
-        // Keep as idb:key or Google Drive URL (never load raw base64 data into memory array)
         p['PO Link'] = overrideVal;
+        p['poLink'] = overrideVal;
+        p['fileUrl'] = overrideVal;
       }
     } else {
       const currentLink = (p['PO Link'] || p['poLink'] || p['fileUrl'] || '').toString().trim();
@@ -780,7 +784,6 @@ async function applyInvoiceOverrides() {
         p['PO Link'] = 'idb:' + key;
         overrides[key] = 'idb:' + key;
       } else if (currentLink.startsWith('idb:')) {
-        // Verify this idb key actually belongs to this material
         const storeKey = currentLink.replace('idb:', '');
         if (storeKey.includes('||')) {
           const parts = storeKey.split('||');
@@ -790,7 +793,6 @@ async function applyInvoiceOverrides() {
           }
         }
       } else if (!currentLink) {
-        // Only restore from IndexedDB if in local demo mode, never resurrect in cloud mode
         if (state.appMode !== 'cloud') {
           if (await InvoiceStorage.hasInvoice(key) && overrides[key] !== '__DELETED__') {
             p['PO Link'] = 'idb:' + key;
@@ -800,6 +802,12 @@ async function applyInvoiceOverrides() {
         }
       }
     }
+  }
+
+  try {
+    localStorage.setItem('electrastock_invoice_overrides', JSON.stringify(overrides));
+  } catch (e) {}
+}
     p['poLink'] = p['PO Link'] || '';
     p['fileUrl'] = p['PO Link'] || '';
   }
@@ -3279,7 +3287,7 @@ function addPurchaseItemRow(materialName = '', make = '', unit = 'Meters', quant
       <span class="kpi-subtext" style="font-size: 0.78rem; display: inline-flex; align-items: center; gap: 5px; color: #34d399; font-weight: 600;">
         <i data-lucide="link" style="width: 13px; height: 13px;"></i> Google Drive PO/Invoice Link:
       </span>
-      <input type="url" class="form-input item-po-link" placeholder="Paste Google Drive Link (Anyone with the link can view)" value="${poLink}" style="flex: 1; min-width: 250px; padding: 7px 12px; font-size: 0.82rem; border-color: rgba(52, 211, 153, 0.4); background: rgba(52, 211, 153, 0.04);">
+      <input type="text" class="form-input item-po-link" placeholder="Paste Google Drive Link (Anyone with the link can view)" value="${poLink}" style="flex: 1; min-width: 250px; padding: 7px 12px; font-size: 0.82rem; border-color: rgba(52, 211, 153, 0.4); background: rgba(52, 211, 153, 0.04);">
       <input type="file" class="item-file-input" accept=".pdf,image/png,image/jpeg,image/jpg" style="display: none;">
       <button type="button" class="btn btn-secondary item-file-btn" style="padding: 6px 12px; font-size: 0.76rem; width: auto; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted);" title="Upload local file instead">
         <i data-lucide="upload-cloud" style="width: 13px; height: 13px;"></i> Or Upload File
@@ -5098,6 +5106,13 @@ function setupIndentLookup() {
 /** Get the effective PO/Invoice link for a specific purchase item (item-level first, then indent document) */
 function getEffectiveItemPoLink(p) {
   if (!p) return '';
+  const direct = (p["PO Link"] || p["poLink"] || p["fileUrl"] || '').toString().trim();
+
+  // 1. Direct web link (Google Drive / Cloud URL from Google Sheet) - SINGLE SOURCE OF TRUTH
+  if (direct && (direct.startsWith('http://') || direct.startsWith('https://'))) {
+    return direct;
+  }
+
   const myMat = (p["Material Name"] || p.name || '').toString().trim().toLowerCase();
   const indentNo = (p["Indent No"] || p.indentNo || '').toString().trim();
   const cleanIndent = indentNo.toLowerCase();
@@ -5105,29 +5120,22 @@ function getEffectiveItemPoLink(p) {
   const indentKey = 'indent_' + indentNo;
   const cleanIndentKey = 'indent_' + cleanIndent;
 
-  // 1. Local overrides ALWAYS take top precedence (allows immediate deletion and prevents cache resurrection)
+  // 2. Check local overrides for local files or pending edits
   try {
     const overrides = JSON.parse(localStorage.getItem('electrastock_invoice_overrides') || '{}');
-    if (overrides[key] === '__DELETED__' || overrides[indentKey] === '__DELETED__' || overrides[cleanIndentKey] === '__DELETED__') {
-      return '';
-    }
-    if (overrides[key]) {
+    if (overrides[key] && overrides[key] !== '__DELETED__') {
       return overrides[key];
     }
     if (indentNo && (overrides[indentKey] || overrides[cleanIndentKey])) {
       const indentOverride = overrides[indentKey] || overrides[cleanIndentKey];
-      if (indentOverride !== '__DELETED__' && !indentOverride.includes('||')) {
+      if (indentOverride && indentOverride !== '__DELETED__' && !indentOverride.includes('||')) {
         return indentOverride;
       }
     }
+    if (overrides[key] === '__DELETED__' || overrides[indentKey] === '__DELETED__' || overrides[cleanIndentKey] === '__DELETED__') {
+      return '';
+    }
   } catch (e) {}
-
-  const direct = (p["PO Link"] || p["poLink"] || p["fileUrl"] || '').toString().trim();
-
-  // 2. Direct web link (Google Drive / Cloud URL from Google Sheet)
-  if (direct && (direct.startsWith('http://') || direct.startsWith('https://'))) {
-    return direct;
-  }
 
   // 3. Direct data URL (in-memory base64)
   if (direct && direct.startsWith('data:')) {
@@ -5414,16 +5422,7 @@ function findIndentPoLink(indentNo, rows = null) {
   const indentKey = 'indent_' + indentNo;
   const cleanIndentKey = 'indent_' + cleanIndent;
 
-  // 1. Check local overrides FIRST! If explicitly deleted, NEVER return a link
-  let overrides = {};
-  try {
-    overrides = JSON.parse(localStorage.getItem('electrastock_invoice_overrides') || '{}');
-    if (overrides[indentKey] === '__DELETED__' || overrides[cleanIndentKey] === '__DELETED__') {
-      return '';
-    }
-  } catch (e) {}
-
-  // 2. Check candidate rows in state.purchases (skipping explicitly deleted rows)
+  // 1. Check candidate rows in state.purchases for a live Google Drive link
   const candidateRows = (rows && rows.length) ? rows : state.purchases.filter(p =>
     (p['Indent No'] || p.indentNo || '').toString().trim().toLowerCase() === cleanIndent
   );
@@ -5431,9 +5430,6 @@ function findIndentPoLink(indentNo, rows = null) {
   if (candidateRows && candidateRows.length) {
     for (let i = 0; i < candidateRows.length; i++) {
       const p = candidateRows[i];
-      const pKey = makePurchaseKey(p);
-      if (overrides[pKey] === '__DELETED__') continue;
-
       const link = (p['PO Link'] || p['poLink'] || p['fileUrl'] || '').toString().trim();
       if (link && (link.startsWith('http://') || link.startsWith('https://'))) {
         return link;
@@ -5441,28 +5437,20 @@ function findIndentPoLink(indentNo, rows = null) {
     }
   }
 
-  // In cloud mode: If Google Sheets data for this indent has no PO document,
-  // do NOT resurrect an old cloud URL from local overrides!
-  if (state.appMode === 'cloud') {
-    return '';
-  }
-
-  // 3. In local demo mode only, check local overrides or IDB
+  // 2. Check local overrides if no direct cloud link was found
+  let overrides = {};
   try {
-    const indentVal = overrides[indentKey] || overrides[cleanIndentKey];
-    if (indentVal && typeof indentVal === 'string' && indentVal.trim() && !indentVal.includes('||') && indentVal !== '__DELETED__') {
-      return indentVal.trim();
-    }
+    overrides = JSON.parse(localStorage.getItem('electrastock_invoice_overrides') || '{}');
+    if (overrides[indentKey] && overrides[indentKey] !== '__DELETED__') return overrides[indentKey];
+    if (overrides[cleanIndentKey] && overrides[cleanIndentKey] !== '__DELETED__') return overrides[cleanIndentKey];
+    if (overrides[indentKey] === '__DELETED__' || overrides[cleanIndentKey] === '__DELETED__') return '';
   } catch (e) {}
 
   if (candidateRows && candidateRows.length) {
     for (let i = 0; i < candidateRows.length; i++) {
       const p = candidateRows[i];
-      const pKey = makePurchaseKey(p);
-      if (overrides[pKey] === '__DELETED__') continue;
-
       const link = (p['PO Link'] || p['poLink'] || p['fileUrl'] || '').toString().trim();
-      if (link && link.startsWith('idb:')) {
+      if (link && (link.startsWith('idb:') || link.startsWith('data:'))) {
         return link;
       }
     }
@@ -6910,9 +6898,9 @@ function setupReuploadInvoiceModalEvents() {
   }
 
   if (form) {
-    form.onsubmit = (e) => {
+    form.onsubmit = async (e) => {
       e.preventDefault();
-      submitReuploadInvoice();
+      await submitReuploadInvoice();
     };
   }
 }
@@ -6934,7 +6922,7 @@ function handleReuploadFileSelected(file) {
 }
 
 /** Save updated invoice link or file to local state & cloud */
-function submitReuploadInvoice() {
+async function submitReuploadInvoice() {
   if (state.currentUser === 'staff') {
     showToast('Staff users have read-only access. Only administrators can upload or edit PO / Invoices.', 'error');
     return;
@@ -6946,12 +6934,12 @@ function submitReuploadInvoice() {
     if (currentReuploadState.mode === 'file' && currentReuploadState.selectedFile) {
       const file = currentReuploadState.selectedFile;
       const reader = new FileReader();
-      reader.onload = function (e) {
+      reader.onload = async function (e) {
         const dataUrl = e.target.result;
         if (state.appMode === 'cloud' && state.sheetUrl) {
           uploadIndentFileToCloudAndSave(indentNo, file.name, dataUrl);
         } else {
-          saveIndentInvoiceUpdate(indentNo, dataUrl, file.name);
+          await saveIndentInvoiceUpdate(indentNo, dataUrl, file.name);
         }
       };
       reader.onerror = function () {
@@ -6961,7 +6949,7 @@ function submitReuploadInvoice() {
     } else {
       const urlInput = document.getElementById('reupload-url-input');
       const newUrl = urlInput ? urlInput.value.trim() : '';
-      saveIndentInvoiceUpdate(indentNo, newUrl);
+      await saveIndentInvoiceUpdate(indentNo, newUrl);
     }
     return;
   }
@@ -6972,14 +6960,14 @@ function submitReuploadInvoice() {
   if (currentReuploadState.mode === 'file' && currentReuploadState.selectedFile) {
     const file = currentReuploadState.selectedFile;
     const reader = new FileReader();
-    reader.onload = function (e) {
+    reader.onload = async function (e) {
       const dataUrl = e.target.result;
       
       // If Cloud connection is active, also trigger Apps Script upload
       if (state.appMode === 'cloud' && state.sheetUrl) {
         uploadFileToCloudAndSave(p, file.name, dataUrl);
       } else {
-        saveInvoiceLinkUpdate(dataUrl);
+        await saveInvoiceLinkUpdate(dataUrl);
       }
     };
     reader.onerror = function () {
@@ -6990,7 +6978,7 @@ function submitReuploadInvoice() {
     // URL Mode
     const urlInput = document.getElementById('reupload-url-input');
     const newUrl = urlInput ? urlInput.value.trim() : '';
-    saveInvoiceLinkUpdate(newUrl);
+    await saveInvoiceLinkUpdate(newUrl);
   }
 }
 
@@ -7049,27 +7037,32 @@ async function saveIndentInvoiceUpdate(indentNo, newUrl, fileName = 'invoice.pdf
   const overrides = JSON.parse(localStorage.getItem('electrastock_invoice_overrides') || '{}');
   const indentKey = 'indent_' + indentNo;
   const cleanIndentKey = 'indent_' + indentNo.toLowerCase();
-  let targetLink = newUrl || '';
+  let targetLink = normalizeInvoiceLink(newUrl);
 
-  if (targetLink) {
-    if (targetLink.startsWith('data:')) {
-      await InvoiceStorage.saveInvoice(indentKey, targetLink, fileName);
-      targetLink = 'idb:' + indentKey;
-      overrides[indentKey] = targetLink;
-    } else {
+  const saveBtn = document.getElementById('save-reupload-btn');
+  const originalBtnHtml = saveBtn ? saveBtn.innerHTML : '';
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spin">⏳</span> Saving to Google Sheets...';
+  }
+
+  if (targetLink.startsWith('data:')) {
+    await InvoiceStorage.saveInvoice(indentKey, targetLink, fileName);
+    targetLink = 'idb:' + indentKey;
+  }
+
+  // Update local overrides cleanly
+  try {
+    const overrides = JSON.parse(localStorage.getItem('electrastock_invoice_overrides') || '{}');
+    if (targetLink) {
       overrides[indentKey] = targetLink;
       delete overrides[cleanIndentKey];
-      if (!targetLink.startsWith('idb:')) {
-        await InvoiceStorage.deleteInvoice(indentKey);
-        await InvoiceStorage.deleteInvoice(cleanIndentKey);
-      }
+    } else {
+      delete overrides[indentKey];
+      delete overrides[cleanIndentKey];
     }
-  } else {
-    overrides[indentKey] = '__DELETED__';
-    overrides[cleanIndentKey] = '__DELETED__';
-    await InvoiceStorage.deleteInvoice(indentKey);
-    await InvoiceStorage.deleteInvoice(cleanIndentKey);
-  }
+    localStorage.setItem('electrastock_invoice_overrides', JSON.stringify(overrides));
+  } catch (e) {}
 
   // Apply to all purchases matching this indent
   state.purchases.forEach(p => {
@@ -7077,26 +7070,14 @@ async function saveIndentInvoiceUpdate(indentNo, newUrl, fileName = 'invoice.pdf
       p["PO Link"] = targetLink;
       p["poLink"] = targetLink;
       p["fileUrl"] = targetLink;
-      const key = makePurchaseKey(p);
-      if (targetLink) {
-        overrides[key] = targetLink;
-      } else {
-        overrides[key] = '__DELETED__';
-        InvoiceStorage.deleteInvoice(key);
-      }
     }
   });
 
-  try {
-    localStorage.setItem('electrastock_invoice_overrides', JSON.stringify(overrides));
-  } catch (e) {
-    console.warn('LocalStorage quota warning:', e);
-  }
-
   savePurchasesToLocalStorage();
 
-  // If in cloud mode, sync update or delete to Cloud
+  // If in cloud mode, sync update or delete to Cloud and wait for confirmation
   if (state.appMode === 'cloud' && state.sheetUrl) {
+    setSyncingAnimation(true);
     if (targetLink.startsWith('https://') || targetLink.startsWith('http://')) {
       const query = new URLSearchParams({
         action: 'updateInvoice',
@@ -7106,9 +7087,32 @@ async function saveIndentInvoiceUpdate(indentNo, newUrl, fileName = 'invoice.pdf
         deleteAllForIndent: 'true',
         _t: Date.now().toString()
       });
-      fetch(`${state.sheetUrl}?${query.toString()}`, { method: 'GET', mode: 'cors', redirect: 'follow' })
-        .then(() => syncWithCloud())
-        .catch(err => console.error('Cloud indent invoice update warning:', err));
+      try {
+        await fetch(`${state.sheetUrl}?${query.toString()}`, {
+          method: 'GET',
+          mode: 'cors',
+          cache: 'no-cache',
+          redirect: 'follow'
+        });
+      } catch (err) {
+        console.warn('GET indent updateInvoice failed, trying POST fallback:', err);
+        try {
+          await fetch(state.sheetUrl, {
+            method: 'POST',
+            mode: 'cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: 'updateInvoice',
+              indentNo: indentNo,
+              materialName: '',
+              poLink: targetLink,
+              deleteAllForIndent: true
+            })
+          });
+        } catch (postErr) {
+          console.error('All indent cloud update requests failed:', postErr);
+        }
+      }
     } else if (!targetLink) {
       const query = new URLSearchParams({
         action: 'deleteInvoice',
@@ -7117,10 +7121,21 @@ async function saveIndentInvoiceUpdate(indentNo, newUrl, fileName = 'invoice.pdf
         deleteAllForIndent: 'true',
         _t: Date.now().toString()
       });
-      fetch(`${state.sheetUrl}?${query.toString()}`, { method: 'GET', mode: 'cors', cache: 'no-cache', redirect: 'follow' })
-        .then(() => syncWithCloud())
-        .catch(err => console.error('Cloud indent invoice delete warning:', err));
+      try {
+        await fetch(`${state.sheetUrl}?${query.toString()}`, {
+          method: 'GET',
+          mode: 'cors',
+          cache: 'no-cache',
+          redirect: 'follow'
+        });
+      } catch (err) {}
     }
+    setSyncingAnimation(false);
+  }
+
+  if (saveBtn) {
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = originalBtnHtml || '<i data-lucide="save"></i> Save & Attach';
   }
 
   closeReuploadInvoiceModal();
@@ -7132,7 +7147,7 @@ async function saveIndentInvoiceUpdate(indentNo, newUrl, fileName = 'invoice.pdf
     renderIndentLookupResult(indentNo);
   }
 
-  showToast(targetLink ? `PO / Invoice attached successfully to Indent ${indentNo}!` : `Invoice detached from Indent ${indentNo}.`, 'success');
+  showToast(targetLink ? `PO / Invoice link saved to Google Sheet & linked to Indent ${indentNo}!` : `Invoice detached from Indent ${indentNo}.`, 'success');
 
   // Automatically open document viewer if a file or URL was provided
   if (targetLink) {
@@ -7145,10 +7160,17 @@ async function saveInvoiceLinkUpdate(newUrl) {
   const p = currentReuploadState.record;
   if (!p) return;
 
-  const indentNo = p["Indent No"] || p.indentNo || '';
-  const matName = p["Material Name"] || p.name || '';
+  const saveBtn = document.getElementById('save-reupload-btn');
+  const originalBtnHtml = saveBtn ? saveBtn.innerHTML : '';
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spin">⏳</span> Saving to Google Sheets...';
+  }
+
+  const indentNo = (p["Indent No"] || p.indentNo || '').toString().trim();
+  const matName = (p["Material Name"] || p.name || '').toString().trim();
   const key = makePurchaseKey(p);
-  let targetLink = newUrl || '';
+  let targetLink = normalizeInvoiceLink(newUrl);
 
   // 1. Update in-memory record (never hold raw base64 data URLs)
   if (targetLink.startsWith('data:')) {
@@ -7159,50 +7181,33 @@ async function saveInvoiceLinkUpdate(newUrl) {
   p["poLink"] = targetLink;
   p["fileUrl"] = targetLink;
 
-  // 2. Update dedicated invoice override store & IndexedDB
-  let overrides = {};
-  try {
-    overrides = JSON.parse(localStorage.getItem('electrastock_invoice_overrides') || '{}');
-  } catch (e) {
-    overrides = {};
-  }
-
-  if (targetLink) {
-    overrides[key] = targetLink;
-    if (!targetLink.startsWith('idb:')) {
-      await InvoiceStorage.deleteInvoice(key);
+  // Update matching record in state.purchases directly
+  state.purchases.forEach(item => {
+    const itemIndent = (item["Indent No"] || item.indentNo || '').toString().trim().toLowerCase();
+    const itemMat = (item["Material Name"] || item.name || '').toString().trim().toLowerCase();
+    if (itemIndent === indentNo.toLowerCase() && itemMat === matName.toLowerCase()) {
+      item["PO Link"] = targetLink;
+      item["poLink"] = targetLink;
+      item["fileUrl"] = targetLink;
     }
-  } else {
-    overrides[key] = '__DELETED__';
-    await InvoiceStorage.deleteInvoice(key);
-  }
+  });
 
+  // 2. Update dedicated invoice override store
   try {
+    const overrides = JSON.parse(localStorage.getItem('electrastock_invoice_overrides') || '{}');
+    if (targetLink) {
+      overrides[key] = targetLink;
+    } else {
+      delete overrides[key];
+    }
     localStorage.setItem('electrastock_invoice_overrides', JSON.stringify(overrides));
-  } catch (e) {
-    console.warn('LocalStorage quota warning:', e);
-  }
+  } catch (e) {}
 
-  // 3. If this was a prev stock entry, update in electrastock_prev_stocks
-  if (p['_prevId']) {
-    let prevStocks = [];
-    try {
-      prevStocks = JSON.parse(localStorage.getItem('electrastock_prev_stocks') || '[]');
-    } catch (e) {}
-    const rec = prevStocks.find(r => r.id === p['_prevId']);
-    if (rec) {
-      rec.poLink = targetLink;
-      try {
-        localStorage.setItem('electrastock_prev_stocks', JSON.stringify(prevStocks));
-      } catch (e) {}
-    }
-  }
-
-  // Save purchases array safely to localStorage
   savePurchasesToLocalStorage();
 
-  // 4. Send to Cloud if connected
+  // 3. Send to Cloud if connected and wait for confirmation
   if (state.appMode === 'cloud' && state.sheetUrl) {
+    setSyncingAnimation(true);
     if (targetLink.startsWith('https://') || targetLink.startsWith('http://')) {
       const query = new URLSearchParams({
         action: 'updateInvoice',
@@ -7211,9 +7216,33 @@ async function saveInvoiceLinkUpdate(newUrl) {
         poLink: targetLink,
         _t: Date.now().toString()
       });
-      fetch(`${state.sheetUrl}?${query.toString()}`, { method: 'GET', mode: 'cors', redirect: 'follow' })
-        .then(() => syncWithCloud())
-        .catch(err => console.error('Cloud invoice update warning:', err));
+      try {
+        const res = await fetch(`${state.sheetUrl}?${query.toString()}`, {
+          method: 'GET',
+          mode: 'cors',
+          cache: 'no-cache',
+          redirect: 'follow'
+        });
+        const data = await res.json();
+        console.log('updateInvoice cloud response:', data);
+      } catch (err) {
+        console.warn('GET updateInvoice failed, trying POST fallback:', err);
+        try {
+          await fetch(state.sheetUrl, {
+            method: 'POST',
+            mode: 'cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: 'updateInvoice',
+              indentNo: indentNo,
+              materialName: matName,
+              poLink: targetLink
+            })
+          });
+        } catch (postErr) {
+          console.error('All cloud invoice update requests failed:', postErr);
+        }
+      }
     } else if (!targetLink) {
       const query = new URLSearchParams({
         action: 'deleteInvoice',
@@ -7221,10 +7250,23 @@ async function saveInvoiceLinkUpdate(newUrl) {
         materialName: matName,
         _t: Date.now().toString()
       });
-      fetch(`${state.sheetUrl}?${query.toString()}`, { method: 'GET', mode: 'cors', cache: 'no-cache', redirect: 'follow' })
-        .then(() => syncWithCloud())
-        .catch(err => console.error('Cloud invoice delete warning:', err));
+      try {
+        await fetch(`${state.sheetUrl}?${query.toString()}`, {
+          method: 'GET',
+          mode: 'cors',
+          cache: 'no-cache',
+          redirect: 'follow'
+        });
+      } catch (err) {
+        console.error('deleteInvoice cloud request failed:', err);
+      }
     }
+    setSyncingAnimation(false);
+  }
+
+  if (saveBtn) {
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = originalBtnHtml || '<i data-lucide="save"></i> Save & Attach';
   }
 
   closeReuploadInvoiceModal();
@@ -7236,7 +7278,7 @@ async function saveInvoiceLinkUpdate(newUrl) {
     renderIndentLookupResult(indentNo);
   }
 
-  showToast(targetLink ? `Invoice document updated successfully for "${matName}"!` : `Invoice detached successfully from "${matName}".`, 'success');
+  showToast(targetLink ? `PO / Invoice link saved to Google Sheet & linked to "${matName}"!` : `Invoice detached successfully from "${matName}".`, 'success');
 
   // Refresh Invoice Viewer Modal if currently active
   const invoiceModal = document.getElementById('invoice-viewer-modal');
